@@ -33,7 +33,7 @@ def _validate_credentials(email: str, password: str) -> tuple[str, str]:
     """
     client = FiClient()
     client.login(email=email, password=password, save_session=False)
-    user_id = client.current_user_id() or email.lower()
+    user_id = client.current_user_id or email.lower()
     try:
         user = client.get_current_user()
         display_name = f"{user.first_name} {user.last_name}".strip() or email
@@ -49,6 +49,7 @@ class FiCollarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     def __init__(self) -> None:
         """Initialize the config flow."""
+        super().__init__()
         self._reauth_entry: config_entries.ConfigEntry | None = None
 
     async def async_step_user(
@@ -82,6 +83,9 @@ class FiCollarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     data={
                         CONF_EMAIL: email,
                         CONF_PASSWORD: password,
+                        CONF_SCAN_INTERVAL: scan_interval,
+                    },
+                    options={
                         CONF_SCAN_INTERVAL: scan_interval,
                     },
                 )
