@@ -1,0 +1,42 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to TryFi",
+        "description": "Enter your TryFi account credentials and polling interval.",
+        "data": {
+          "email": "Email Address",
+          "password": "Password",
+          "scan_interval": "Update Interval (seconds)"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Re-authenticate TryFi",
+        "description": "Please enter your updated password for {email}.",
+        "data": {
+          "password": "Password"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Invalid email or password.",
+      "cannot_connect": "Failed to connect to TryFi servers.",
+      "unknown": "An unexpected error occurred."
+    },
+    "abort": {
+      "already_configured": "This TryFi account is already configured.",
+      "reauth_successful": "Re-authentication was successful."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Fi Collar Options",
+        "description": "Adjust the polling frequency for collar status and telemetry.",
+        "data": {
+          "scan_interval": "Update Interval (seconds)"
+        }
+      }
+    }
+  }
+}

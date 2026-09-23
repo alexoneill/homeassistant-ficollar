@@ -1,0 +1,12 @@
+{
+  "domain": "ficollar",
+  "name": "Fi Collar",
+  "codeowners": ["@alexoneill"],
+  "config_flow": true,
+  "documentation": "https://github.com/alexoneill/homeassistant-ficollar",
+  "integration_type": "hub",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/alexoneill/homeassistant-ficollar/issues",
+  "requirements": ["pyficollar>=0.1.1"],
+  "version": "0.1.0"
+}
