@@ -172,9 +172,11 @@ class FiCollarConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 class FiCollarOptionsFlow(config_entries.OptionsFlow):
     """Handle options for Fi Collar."""
 
-    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
+    def __init__(self, config_entry: config_entries.ConfigEntry | None = None) -> None:
         """Initialize options flow."""
-        self.config_entry = config_entry
+        super().__init__()
+        if config_entry is not None:
+            self._config_entry = config_entry
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
