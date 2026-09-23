@@ -73,6 +73,7 @@ The integration is powered by the [`pyficollar`](https://github.com/alexoneill/p
   user_id = client.current_user_id()
   ```
 - Always call `super().__init__()` in `FiCollarConfigFlow.__init__`.
+- **OptionsFlow Gotcha**: In Home Assistant Core 2024.12+ / 2025+, `config_entry` on `config_entries.OptionsFlow` is a read-only `@property` without a setter. Never assign `self.config_entry = config_entry` in `__init__`. Instead, assign `self._config_entry = config_entry`.
 
 ### `custom_components/ficollar/coordinator.py`
 - `PetCoordinatorData` is a typed dataclass storing:
