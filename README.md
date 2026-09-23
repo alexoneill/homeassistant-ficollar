@@ -1,5 +1,7 @@
 # Fi Smart Dog Collar for Home Assistant
 
+[![Validate Integration](https://github.com/alexoneill/homeassistant-ficollar/actions/workflows/validate.yml/badge.svg)](https://github.com/alexoneill/homeassistant-ficollar/actions/workflows/validate.yml)
+[![Tests](https://github.com/alexoneill/homeassistant-ficollar/actions/workflows/test.yml/badge.svg)](https://github.com/alexoneill/homeassistant-ficollar/actions/workflows/test.yml)
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg?style=for-the-badge)](https://github.com/hacs/default)
 [![GitHub Release](https://img.shields.io/github/v/release/alexoneill/homeassistant-ficollar?style=for-the-badge)](https://github.com/alexoneill/homeassistant-ficollar/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
@@ -112,6 +114,41 @@ action:
     data:
       title: "Milo Alert"
       message: "Milo left home! Collar light has been turned on."
+```
+
+---
+
+## Development & Testing
+
+This integration uses `pytest-homeassistant-custom-component` for testing against the official Home Assistant Core async environment.
+
+### Local Setup
+```bash
+# Create and activate a Python 3.12 virtual environment
+python3.12 -m venv .venv
+source .venv/bin/activate
+
+# Install test runner and dependencies
+pip install pytest-homeassistant-custom-component "pyficollar>=0.1.1"
+
+# Run tests
+pytest tests
+```
+
+---
+
+## Releasing
+
+Releases are 100% tag-driven. When a `v*` tag is pushed:
+1. GitHub Actions extracts the tag version.
+2. Injects the version into `custom_components/ficollar/manifest.json`.
+3. Packages `ficollar.zip` and attaches it to the release.
+4. Publishes a GitHub Release with auto-generated release notes.
+
+To cut a new release:
+```bash
+git tag v0.1.1
+git push origin v0.1.1
 ```
 
 ---
