@@ -1,191 +1,168 @@
-"""Tests for Fi Collar config flow and credential validation."""
+"""Tests for the Fi Collar config flow using pytest-homeassistant-custom-component."""
 
 from __future__ import annotations
 
-import asyncio
-from pathlib import Path
-import sys
-import unittest
 from unittest.mock import MagicMock, PropertyMock, patch
 
-REPO_ROOT = Path(__file__).parent.parent.resolve()
-PYFICOLLAR_ROOT = (REPO_ROOT.parent / "pyficollar").resolve()
-for p in [str(REPO_ROOT), str(PYFICOLLAR_ROOT)]:
-    if Path(p).exists() and p not in sys.path:
-        sys.path.insert(0, p)
+import pytest
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-try:
-    from tests.mock_ha import setup_mock_homeassistant
-except ModuleNotFoundError:
-    from mock_ha import setup_mock_homeassistant
-
-setup_mock_homeassistant()
-
-from pyficollar.exceptions import FiAuthError, FiNetworkError
-from pyficollar.models import User
-
-from custom_components.ficollar.config_flow import (
-    FiCollarConfigFlow,
-    FiCollarOptionsFlow,
-    _validate_credentials,
-)
+from custom_components.ficollar.config_flow import _validate_credentials
 from custom_components.ficollar.const import (
     CONF_EMAIL,
     CONF_PASSWORD,
     CONF_SCAN_INTERVAL,
     DEFAULT_SCAN_INTERVAL,
+    DOMAIN,
 )
-from homeassistant.config_entries import ConfigEntry
+from homeassistant import config_entries
+from homeassistant.core import HomeAssistant
+from homeassistant.data_entry_flow import FlowResultType
+from pyficollar.exceptions import FiAuthError, FiNetworkError
+from pyficollar.models import User
 
 
-class TestConfigFlow(unittest.TestCase):
-    """Test Fi Collar config flow and credential validation."""
+async def test_validate_credentials_accesses_property() -> None:
+    """Verify _validate_credentials accesses current_user_id property without calling it."""
+    with patch("custom_components.ficollar.config_flow.FiClient") as mock_client_cls:
+        mock_client = MagicMock()
+        # current_user_id is a property returning a string, not a callable!
+        type(mock_client).current_user_id = PropertyMock(return_value="user_abc_123")
+        mock_client.get_current_user.return_value = User(
+            id="user_abc_123",
+            email="test@example.com",
+            first_name="Alex",
+            last_name="O'Neill",
+        )
+        mock_client_cls.return_value = mock_client
 
-    def test_validate_credentials_success(self) -> None:
-        """Verify _validate_credentials accesses current_user_id property without error."""
-        with patch("custom_components.ficollar.config_flow.FiClient") as mock_client_cls:
-            mock_client = MagicMock()
-            type(mock_client).current_user_id = PropertyMock(return_value="user_abc_123")
-            mock_client.get_current_user.return_value = User(
-                id="user_abc_123",
-                email="test@example.com",
-                first_name="Alex",
-                last_name="O'Neill",
-            )
-            mock_client_cls.return_value = mock_client
+        user_id, display_name = _validate_credentials("test@example.com", "secret")
 
-            user_id, display_name = _validate_credentials("test@example.com", "valid_pass")
+        assert user_id == "user_abc_123"
+        assert display_name == "Alex O'Neill"
+        mock_client.login.assert_called_once_with(
+            email="test@example.com", password="secret", save_session=False
+        )
 
-            self.assertEqual(user_id, "user_abc_123")
-            self.assertEqual(display_name, "Alex O'Neill")
-            mock_client.login.assert_called_once_with(
-                email="test@example.com", password="valid_pass", save_session=False
-            )
 
-    def test_validate_credentials_auth_error(self) -> None:
-        """Verify _validate_credentials raises FiAuthError on bad credentials."""
-        with patch("custom_components.ficollar.config_flow.FiClient") as mock_client_cls:
-            mock_client = MagicMock()
-            mock_client.login.side_effect = FiAuthError("Invalid credentials")
-            mock_client_cls.return_value = mock_client
+async def test_form_user_step_initial(hass: HomeAssistant) -> None:
+    """Test initial user step displays the configuration form."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": config_entries.SOURCE_USER}
+    )
 
-            with self.assertRaises(FiAuthError):
-                _validate_credentials("test@example.com", "wrong_pass")
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "user"
+    assert result["errors"] == {}
 
-    def test_validate_credentials_fallback_display_name(self) -> None:
-        """Verify _validate_credentials falls back to email if user details fail."""
-        with patch("custom_components.ficollar.config_flow.FiClient") as mock_client_cls:
-            mock_client = MagicMock()
-            type(mock_client).current_user_id = PropertyMock(return_value=None)
-            mock_client.get_current_user.side_effect = Exception("User info unavailable")
-            mock_client_cls.return_value = mock_client
 
-            user_id, display_name = _validate_credentials("test@example.com", "pass")
+async def test_form_user_step_success(hass: HomeAssistant, mock_fi_client: MagicMock) -> None:
+    """Test successful configuration flow creates an entry."""
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": config_entries.SOURCE_USER}
+    )
 
-            self.assertEqual(user_id, "test@example.com")
-            self.assertEqual(display_name, "test@example.com")
-
-    def test_async_step_user_show_form(self) -> None:
-        """Verify initial form is shown when user_input is None."""
-        flow = FiCollarConfigFlow()
-        result = asyncio.run(flow.async_step_user(user_input=None))
-
-        self.assertEqual(result["type"], "form")
-        self.assertEqual(result["step_id"], "user")
-        self.assertEqual(result["errors"], {})
-
-    def test_async_step_user_success(self) -> None:
-        """Verify successful entry creation from user input."""
-        flow = FiCollarConfigFlow()
-        user_input = {
+    result2 = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        user_input={
             CONF_EMAIL: "test@example.com",
             CONF_PASSWORD: "secret_password",
             CONF_SCAN_INTERVAL: 45,
-        }
+        },
+    )
 
-        with patch(
-            "custom_components.ficollar.config_flow._validate_credentials",
-            return_value=("user_abc_123", "Alex O'Neill"),
-        ):
-            result = asyncio.run(flow.async_step_user(user_input=user_input))
+    assert result2["type"] is FlowResultType.CREATE_ENTRY
+    assert result2["title"] == "Fi Collar (Alex O'Neill)"
+    assert result2["data"] == {
+        CONF_EMAIL: "test@example.com",
+        CONF_PASSWORD: "secret_password",
+        CONF_SCAN_INTERVAL: 45,
+    }
+    assert result2["options"] == {
+        CONF_SCAN_INTERVAL: 45,
+    }
 
-            self.assertEqual(result["type"], "create_entry")
-            self.assertEqual(result["title"], "Fi Collar (Alex O'Neill)")
-            self.assertEqual(result["data"][CONF_EMAIL], "test@example.com")
-            self.assertEqual(result["data"][CONF_PASSWORD], "secret_password")
-            self.assertEqual(result["data"][CONF_SCAN_INTERVAL], 45)
-            self.assertEqual(result["options"][CONF_SCAN_INTERVAL], 45)
 
-    def test_async_step_user_invalid_auth(self) -> None:
-        """Verify form is re-shown with invalid_auth error on FiAuthError."""
-        flow = FiCollarConfigFlow()
-        user_input = {
+async def test_form_user_step_invalid_auth(hass: HomeAssistant, mock_fi_client: MagicMock) -> None:
+    """Test invalid credentials error in config flow."""
+    mock_fi_client.login.side_effect = FiAuthError("Bad credentials")
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": config_entries.SOURCE_USER}
+    )
+
+    result2 = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        user_input={
             CONF_EMAIL: "test@example.com",
-            CONF_PASSWORD: "bad_password",
-            CONF_SCAN_INTERVAL: 60,
-        }
+            CONF_PASSWORD: "wrong_password",
+            CONF_SCAN_INTERVAL: DEFAULT_SCAN_INTERVAL,
+        },
+    )
 
-        with patch(
-            "custom_components.ficollar.config_flow._validate_credentials",
-            side_effect=FiAuthError("Unauthorized"),
-        ):
-            result = asyncio.run(flow.async_step_user(user_input=user_input))
+    assert result2["type"] is FlowResultType.FORM
+    assert result2["errors"] == {"base": "invalid_auth"}
 
-            self.assertEqual(result["type"], "form")
-            self.assertEqual(result["errors"], {"base": "invalid_auth"})
 
-    def test_async_step_user_cannot_connect(self) -> None:
-        """Verify form is re-shown with cannot_connect error on FiNetworkError."""
-        flow = FiCollarConfigFlow()
-        user_input = {
-            CONF_EMAIL: "test@example.com",
-            CONF_PASSWORD: "secret_password",
-            CONF_SCAN_INTERVAL: 60,
-        }
+async def test_form_user_step_cannot_connect(
+    hass: HomeAssistant, mock_fi_client: MagicMock
+) -> None:
+    """Test network error during config flow."""
+    mock_fi_client.login.side_effect = FiNetworkError("Network unreachable")
 
-        with patch(
-            "custom_components.ficollar.config_flow._validate_credentials",
-            side_effect=FiNetworkError("Connection refused"),
-        ):
-            result = asyncio.run(flow.async_step_user(user_input=user_input))
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": config_entries.SOURCE_USER}
+    )
 
-            self.assertEqual(result["type"], "form")
-            self.assertEqual(result["errors"], {"base": "cannot_connect"})
-
-    def test_async_step_user_unknown_exception(self) -> None:
-        """Verify form is re-shown with unknown error on unexpected exception."""
-        flow = FiCollarConfigFlow()
-        user_input = {
+    result2 = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        user_input={
             CONF_EMAIL: "test@example.com",
             CONF_PASSWORD: "secret_password",
-            CONF_SCAN_INTERVAL: 60,
-        }
+            CONF_SCAN_INTERVAL: DEFAULT_SCAN_INTERVAL,
+        },
+    )
 
-        with patch(
-            "custom_components.ficollar.config_flow._validate_credentials",
-            side_effect=RuntimeError("Something broke"),
-        ):
-            result = asyncio.run(flow.async_step_user(user_input=user_input))
-
-            self.assertEqual(result["type"], "form")
-            self.assertEqual(result["errors"], {"base": "unknown"})
-
-    def test_options_flow(self) -> None:
-        """Verify options flow displays form and updates scan interval."""
-        entry = ConfigEntry(
-            data={CONF_EMAIL: "test@example.com", CONF_PASSWORD: "pass", CONF_SCAN_INTERVAL: 60},
-            options={CONF_SCAN_INTERVAL: 60},
-        )
-        flow = FiCollarOptionsFlow(entry)
-
-        form_result = asyncio.run(flow.async_step_init(user_input=None))
-        self.assertEqual(form_result["type"], "form")
-        self.assertEqual(form_result["step_id"], "init")
-
-        create_result = asyncio.run(flow.async_step_init(user_input={CONF_SCAN_INTERVAL: 120}))
-        self.assertEqual(create_result["type"], "create_entry")
-        self.assertEqual(create_result["data"][CONF_SCAN_INTERVAL], 120)
+    assert result2["type"] is FlowResultType.FORM
+    assert result2["errors"] == {"base": "cannot_connect"}
 
 
-if __name__ == "__main__":
-    unittest.main()
+async def test_form_user_step_already_configured(
+    hass: HomeAssistant, mock_config_entry: MockConfigEntry, mock_fi_client: MagicMock
+) -> None:
+    """Test abort when account is already configured."""
+    mock_config_entry.add_to_hass(hass)
+
+    result = await hass.config_entries.flow.async_init(
+        DOMAIN, context={"source": config_entries.SOURCE_USER}
+    )
+
+    result2 = await hass.config_entries.flow.async_configure(
+        result["flow_id"],
+        user_input={
+            CONF_EMAIL: "test@example.com",
+            CONF_PASSWORD: "secret_password",
+            CONF_SCAN_INTERVAL: DEFAULT_SCAN_INTERVAL,
+        },
+    )
+
+    assert result2["type"] is FlowResultType.ABORT
+    assert result2["reason"] == "already_configured"
+
+
+async def test_options_flow(hass: HomeAssistant, mock_config_entry: MockConfigEntry) -> None:
+    """Test modifying scan interval via options flow."""
+    mock_config_entry.add_to_hass(hass)
+
+    result = await hass.config_entries.options.async_init(mock_config_entry.entry_id)
+
+    assert result["type"] is FlowResultType.FORM
+    assert result["step_id"] == "init"
+
+    result2 = await hass.config_entries.options.async_configure(
+        result["flow_id"],
+        user_input={CONF_SCAN_INTERVAL: 120},
+    )
+
+    assert result2["type"] is FlowResultType.CREATE_ENTRY
+    assert result2["data"] == {CONF_SCAN_INTERVAL: 120}

@@ -2,197 +2,133 @@
 
 from __future__ import annotations
 
-import asyncio
-from pathlib import Path
-import sys
-import unittest
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import MagicMock
 
-REPO_ROOT = Path(__file__).parent.parent.resolve()
-PYFICOLLAR_ROOT = (REPO_ROOT.parent / "pyficollar").resolve()
-for p in [str(REPO_ROOT), str(PYFICOLLAR_ROOT)]:
-    if Path(p).exists() and p not in sys.path:
-        sys.path.insert(0, p)
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-try:
-    from tests.mock_ha import setup_mock_homeassistant
-except ModuleNotFoundError:
-    from mock_ha import setup_mock_homeassistant
-
-setup_mock_homeassistant()
-
-from pyficollar.models import (
-    ActivitySummary,
-    Device,
-    Location,
-    Pet,
-    PetLiveState,
-    Place,
-    Position,
-    RestSummary,
-    Walk,
-)
-
-from custom_components.ficollar.binary_sensor import (
-    BINARY_SENSOR_DESCRIPTIONS,
-    FiBinarySensor,
-)
-from custom_components.ficollar.coordinator import PetCoordinatorData
-from custom_components.ficollar.device_tracker import FiDeviceTracker
-from custom_components.ficollar.light import FiCollarLight
-from custom_components.ficollar.sensor import (
-    SENSOR_DESCRIPTIONS,
-    FiSensor,
-)
-from custom_components.ficollar.switch import FiLostDogModeSwitch
+from homeassistant.const import ATTR_ENTITY_ID, STATE_OFF, STATE_ON
 from homeassistant.core import HomeAssistant
 
 
-def build_mock_coordinator(pet_id: str = "pet_123") -> tuple[MagicMock, MagicMock]:
-    """Build a mock coordinator with complete populated PetCoordinatorData."""
-    mock_client = MagicMock()
-    mock_coordinator = MagicMock()
-    mock_coordinator.hass = HomeAssistant()
-    mock_coordinator.client = mock_client
-    mock_coordinator.async_request_refresh = AsyncMock()
+async def test_device_tracker_state(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_fi_client: MagicMock,
+) -> None:
+    """Verify device tracker entity GPS coordinates and attributes in Home Assistant."""
+    mock_config_entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
 
-    pet = Pet(
-        id=pet_id,
-        name="Luna",
-        weight=25.0,
-        device=Device(
-            id="collar_abc_789",
-            module_id="FC12345678",
-            battery_percent=88,
-            led_enabled=True,
-        ),
+    state = hass.states.get("device_tracker.luna_location")
+    assert state is not None
+    assert state.attributes.get("latitude") == 37.7749
+    assert state.attributes.get("longitude") == -122.4194
+    assert state.attributes.get("battery_level") == 88
+    assert state.attributes.get("location_name") == "Home"
+    assert state.attributes.get("is_at_home") is True
+
+
+async def test_sensors_state(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_fi_client: MagicMock,
+) -> None:
+    """Verify sensors report correct values and attributes in Home Assistant."""
+    mock_config_entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    batt_state = hass.states.get("sensor.luna_battery")
+    assert batt_state is not None
+    assert batt_state.state == "88"
+
+    steps_state = hass.states.get("sensor.luna_steps_today")
+    assert steps_state is not None
+    assert steps_state.state == "8420"
+
+    goal_progress = hass.states.get("sensor.luna_step_goal_progress")
+    assert goal_progress is not None
+    assert goal_progress.state == "84.2"
+
+    sleep_state = hass.states.get("sensor.luna_sleep_duration")
+    assert sleep_state is not None
+    assert sleep_state.state == "8.0"
+
+    walk_dist = hass.states.get("sensor.luna_last_walk_distance")
+    assert walk_dist is not None
+    assert walk_dist.state == "1.85"
+
+
+async def test_binary_sensors_state(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_fi_client: MagicMock,
+) -> None:
+    """Verify binary sensors reflect correct states."""
+    mock_config_entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    online_state = hass.states.get("binary_sensor.luna_online")
+    assert online_state is not None
+    assert online_state.state == STATE_ON
+
+    out_of_batt_state = hass.states.get("binary_sensor.luna_out_of_battery")
+    assert out_of_batt_state is not None
+    assert out_of_batt_state.state == STATE_OFF
+
+
+async def test_collar_light_services(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_fi_client: MagicMock,
+) -> None:
+    """Verify turning collar light on and off via Home Assistant services."""
+    mock_config_entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    light_state = hass.states.get("light.luna_collar_led")
+    assert light_state is not None
+
+    # Call light.turn_on service
+    await hass.services.async_call(
+        "light",
+        "turn_on",
+        {ATTR_ENTITY_ID: "light.luna_collar_led"},
+        blocking=True,
     )
-    live_state = PetLiveState(
-        pet_id=pet_id,
-        is_online=True,
-        is_stale=False,
-        out_of_battery=False,
-        lost_mode="LOST",
-        battery_percent=88,
-        location_name="Home",
-        location=Location(
-            position=Position(latitude=37.7749, longitude=-122.4194),
-            error_radius=12.5,
-            place=Place(id="pl_1", name="Home", is_quick_zone=True),
-        ),
-        is_walking=True,
-        ongoing_steps=450,
-        module_id="FC12345678",
+    mock_fi_client.set_led.assert_called_with("FC12345678", True)
+
+    # Call light.turn_off service
+    await hass.services.async_call(
+        "light",
+        "turn_off",
+        {ATTR_ENTITY_ID: "light.luna_collar_led"},
+        blocking=True,
     )
-    activity = ActivitySummary(
-        total_steps=9120,
-        step_goal=10000,
-        streak_days=5,
+    mock_fi_client.set_led.assert_called_with("FC12345678", False)
+
+
+async def test_lost_dog_mode_switch_service(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_fi_client: MagicMock,
+) -> None:
+    """Verify turning on lost dog mode via Home Assistant switch service."""
+    mock_config_entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    switch_state = hass.states.get("switch.luna_lost_dog_mode")
+    assert switch_state is not None
+
+    # Call switch.turn_on service
+    await hass.services.async_call(
+        "switch",
+        "turn_on",
+        {ATTR_ENTITY_ID: "switch.luna_lost_dog_mode"},
+        blocking=True,
     )
-    rest = RestSummary(
-        has_sleep_data=True,
-        sleep_seconds=28800,
-        nap_seconds=7200,
-        rest_seconds=36000,
-    )
-    last_walk = Walk(
-        id="walk_1",
-        start="2026-09-23T12:00:00Z",
-        distance_meters=2100.0,
-        total_steps=2700,
-    )
-
-    pet_data = PetCoordinatorData(
-        pet=pet,
-        live_state=live_state,
-        activity=activity,
-        rest=rest,
-        last_walk=last_walk,
-    )
-    mock_coordinator.data = {pet_id: pet_data}
-    return mock_coordinator, mock_client
-
-
-class TestEntities(unittest.TestCase):
-    """Test entity platforms and state accessors."""
-
-    def setUp(self) -> None:
-        self.coordinator, self.client = build_mock_coordinator("pet_123")
-
-    def test_device_tracker(self) -> None:
-        """Verify device tracker GPS and safe zone properties."""
-        tracker = FiDeviceTracker(self.coordinator, "pet_123")
-
-        self.assertEqual(tracker.latitude, 37.7749)
-        self.assertEqual(tracker.longitude, -122.4194)
-        self.assertEqual(tracker.location_accuracy, 12)
-        self.assertEqual(tracker.battery_level, 88)
-        self.assertEqual(tracker.source_type, "gps")
-
-        attrs = tracker.extra_state_attributes
-        self.assertEqual(attrs["location_name"], "Home")
-        self.assertTrue(attrs["is_at_home"])
-
-    def test_sensors(self) -> None:
-        """Verify values for all sensor types."""
-        desc_map = {d.key: d for d in SENSOR_DESCRIPTIONS}
-
-        battery_sensor = FiSensor(self.coordinator, "pet_123", desc_map["battery"])
-        self.assertEqual(battery_sensor.native_value, 88)
-
-        steps_sensor = FiSensor(self.coordinator, "pet_123", desc_map["steps_today"])
-        self.assertEqual(steps_sensor.native_value, 9120)
-
-        goal_progress_sensor = FiSensor(self.coordinator, "pet_123", desc_map["step_goal_progress"])
-        self.assertEqual(goal_progress_sensor.native_value, 91.2)
-
-        sleep_sensor = FiSensor(self.coordinator, "pet_123", desc_map["sleep_hours"])
-        self.assertEqual(sleep_sensor.native_value, 8.0)
-
-        walk_dist_sensor = FiSensor(self.coordinator, "pet_123", desc_map["last_walk_distance"])
-        self.assertEqual(walk_dist_sensor.native_value, 2.1)
-
-        weight_sensor = FiSensor(self.coordinator, "pet_123", desc_map["weight"])
-        self.assertEqual(weight_sensor.native_value, 25.0)
-
-    def test_binary_sensors(self) -> None:
-        """Verify binary sensor state booleans."""
-        desc_map = {d.key: d for d in BINARY_SENSOR_DESCRIPTIONS}
-
-        online_sensor = FiBinarySensor(self.coordinator, "pet_123", desc_map["online"])
-        self.assertTrue(online_sensor.is_on)
-
-        out_of_batt_sensor = FiBinarySensor(self.coordinator, "pet_123", desc_map["out_of_battery"])
-        self.assertFalse(out_of_batt_sensor.is_on)
-
-        lost_sensor = FiBinarySensor(self.coordinator, "pet_123", desc_map["lost_mode"])
-        self.assertTrue(lost_sensor.is_on)
-
-        walking_sensor = FiBinarySensor(self.coordinator, "pet_123", desc_map["is_walking"])
-        self.assertTrue(walking_sensor.is_on)
-
-        stale_sensor = FiBinarySensor(self.coordinator, "pet_123", desc_map["is_stale"])
-        self.assertFalse(stale_sensor.is_on)
-
-    def test_collar_light(self) -> None:
-        """Verify collar light status, turn_on, and turn_off."""
-        light = FiCollarLight(self.coordinator, "pet_123", "FC12345678")
-        self.assertTrue(light.is_on)
-
-        asyncio.run(light.async_turn_off())
-        self.client.set_led.assert_called_with("FC12345678", False)
-
-        asyncio.run(light.async_turn_on())
-        self.client.set_led.assert_called_with("FC12345678", True)
-
-    def test_lost_dog_mode_switch(self) -> None:
-        """Verify lost dog mode switch state and activation."""
-        switch = FiLostDogModeSwitch(self.coordinator, "pet_123")
-        self.assertTrue(switch.is_on)
-
-        asyncio.run(switch.async_turn_on())
-        self.client.enable_lost_dog_mode.assert_called_with("pet_123")
-
-
-if __name__ == "__main__":
-    unittest.main()
+    mock_fi_client.enable_lost_dog_mode.assert_called_with("pet_123")

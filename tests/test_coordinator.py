@@ -1,111 +1,73 @@
-"""Tests for FiDataUpdateCoordinator."""
+"""Tests for FiDataUpdateCoordinator using pytest-homeassistant-custom-component."""
 
 from __future__ import annotations
 
-import asyncio
-from datetime import timedelta
-from pathlib import Path
-import sys
-import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
-REPO_ROOT = Path(__file__).parent.parent.resolve()
-PYFICOLLAR_ROOT = (REPO_ROOT.parent / "pyficollar").resolve()
-for p in [str(REPO_ROOT), str(PYFICOLLAR_ROOT)]:
-    if Path(p).exists() and p not in sys.path:
-        sys.path.insert(0, p)
-
-try:
-    from tests.mock_ha import setup_mock_homeassistant
-except ModuleNotFoundError:
-    from mock_ha import setup_mock_homeassistant
-
-setup_mock_homeassistant()
-
-from pyficollar.exceptions import FiAuthError, FiNetworkError
-from pyficollar.models import ActivitySummary, Device, Pet, PetLiveState, RestSummary, Walk
-
-from custom_components.ficollar.coordinator import FiDataUpdateCoordinator
+import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers.update_coordinator import UpdateFailed
+from pyficollar.exceptions import FiAuthError, FiNetworkError
+from pyficollar.models import ActivitySummary, Pet, PetLiveState, RestSummary, Walk
+
+from custom_components.ficollar.coordinator import FiDataUpdateCoordinator
 
 
-def create_sample_pet(pet_id: str = "pet_123", name: str = "Luna") -> Pet:
-    """Create a sample Pet model instance."""
-    return Pet(
-        id=pet_id,
-        name=name,
-        breed_name="Golden Retriever",
-        gender="FEMALE",
-        weight=25.0,
-        device=Device(id="collar_abc_789", module_id="FC12345678", battery_percent=88),
+async def test_coordinator_update_success(
+    hass: HomeAssistant,
+    mock_fi_client: MagicMock,
+    sample_pet: Pet,
+    sample_live_state: PetLiveState,
+    sample_activity: ActivitySummary,
+    sample_rest: RestSummary,
+    sample_walk: Walk,
+) -> None:
+    """Test successful data polling and parsing by coordinator."""
+    coordinator = FiDataUpdateCoordinator(
+        hass=hass,
+        client=mock_fi_client,
+        update_interval_seconds=60,
     )
 
+    data = await coordinator._async_update_data()
 
-class TestCoordinator(unittest.TestCase):
-    """Test FiDataUpdateCoordinator data polling and error handling."""
-
-    def setUp(self) -> None:
-        self.hass = HomeAssistant()
-        self.mock_client = MagicMock()
-        self.coordinator = FiDataUpdateCoordinator(
-            hass=self.hass,
-            client=self.mock_client,
-            update_interval_seconds=60,
-        )
-
-    def test_update_data_success(self) -> None:
-        """Verify successful poll populates pet data map."""
-        pet = create_sample_pet()
-        self.mock_client.get_pets.return_value = [pet]
-        self.mock_client.get_pet_live_state.return_value = PetLiveState(
-            pet_id="pet_123",
-            is_online=True,
-            battery_percent=88,
-            location_name="Home",
-        )
-        self.mock_client.get_pet_activity.return_value = ActivitySummary(
-            total_steps=8420,
-            step_goal=10000,
-        )
-        self.mock_client.get_pet_rest.return_value = RestSummary(
-            has_sleep_data=True,
-            sleep_seconds=28800,
-            nap_seconds=7200,
-            rest_seconds=36000,
-        )
-        self.mock_client.get_last_walk.return_value = Walk(
-            id="walk_1",
-            start="2026-09-23T12:00:00Z",
-            distance_meters=1850.0,
-            total_steps=2400,
-        )
-
-        data = asyncio.run(self.coordinator._async_update_data())
-
-        self.assertIn("pet_123", data)
-        pet_data = data["pet_123"]
-        self.assertEqual(pet_data.pet.name, "Luna")
-        self.assertEqual(pet_data.live_state.location_name, "Home")
-        self.assertEqual(pet_data.activity.total_steps, 8420)
-        self.assertEqual(pet_data.rest.rest_seconds, 36000)
-        self.assertEqual(pet_data.last_walk.total_steps, 2400)
-
-    def test_update_data_auth_failure(self) -> None:
-        """Verify FiAuthError raises ConfigEntryAuthFailed."""
-        self.mock_client.get_pets.side_effect = FiAuthError("Expired session")
-
-        with self.assertRaises(ConfigEntryAuthFailed):
-            asyncio.run(self.coordinator._async_update_data())
-
-    def test_update_data_network_failure(self) -> None:
-        """Verify FiNetworkError raises UpdateFailed."""
-        self.mock_client.get_pets.side_effect = FiNetworkError("Timeout")
-
-        with self.assertRaises(UpdateFailed):
-            asyncio.run(self.coordinator._async_update_data())
+    assert "pet_123" in data
+    pet_data = data["pet_123"]
+    assert pet_data.pet.name == "Luna"
+    assert pet_data.live_state.battery_percent == 88
+    assert pet_data.activity.total_steps == 8420
+    assert pet_data.rest.sleep_hours == 8.0
+    assert pet_data.last_walk.distance_km == 1.85
 
 
-if __name__ == "__main__":
-    unittest.main()
+async def test_coordinator_auth_failure(
+    hass: HomeAssistant,
+    mock_fi_client: MagicMock,
+) -> None:
+    """Test FiAuthError raises ConfigEntryAuthFailed."""
+    mock_fi_client.get_pets.side_effect = FiAuthError("Session expired")
+    coordinator = FiDataUpdateCoordinator(
+        hass=hass,
+        client=mock_fi_client,
+        update_interval_seconds=60,
+    )
+
+    with pytest.raises(ConfigEntryAuthFailed):
+        await coordinator._async_update_data()
+
+
+async def test_coordinator_network_failure(
+    hass: HomeAssistant,
+    mock_fi_client: MagicMock,
+) -> None:
+    """Test FiNetworkError raises UpdateFailed."""
+    mock_fi_client.get_pets.side_effect = FiNetworkError("Cannot reach api.tryfi.com")
+    coordinator = FiDataUpdateCoordinator(
+        hass=hass,
+        client=mock_fi_client,
+        update_interval_seconds=60,
+    )
+
+    with pytest.raises(UpdateFailed):
+        await coordinator._async_update_data()
