@@ -40,7 +40,9 @@ jobs:
 
       - name: Build zip archive
         run: |
-          zip -r ficollar.zip custom_components/ficollar -x "*/__pycache__/*" -x "*.DS_Store*"
+          cd custom_components/ficollar
+          zip -r ../../ficollar.zip . -x "*__pycache__*" -x "*.DS_Store*"
+          cd ../..
 
       - name: Commit manifest version bump
         uses: stefanzweifel/git-auto-commit-action@v5
