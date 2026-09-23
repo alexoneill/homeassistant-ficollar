@@ -69,10 +69,12 @@ class TestManifests(unittest.TestCase):
         self.assertEqual(strings_data, trans_data, "strings.json and translations/en.json must match")
 
     def test_brand_assets_exist(self) -> None:
-        """Verify brand assets exist."""
-        brand_icon = REPO_ROOT / "brand" / "icon.png"
-        self.assertTrue(brand_icon.exists(), "brand/icon.png must exist for HACS validation")
-        self.assertGreater(brand_icon.stat().st_size, 0, "brand/icon.png must not be empty")
+        """Verify brand assets exist for both light and dark modes."""
+        for folder in [REPO_ROOT / "brand", CUSTOM_COMPONENTS / "brand"]:
+            for filename in ["icon.png", "icon@2x.png", "dark_icon.png", "dark_icon@2x.png", "logo.png", "dark_logo.png"]:
+                asset_path = folder / filename
+                self.assertTrue(asset_path.exists(), f"{asset_path} must exist")
+                self.assertGreater(asset_path.stat().st_size, 0, f"{asset_path} must not be empty")
 
 
 if __name__ == "__main__":
