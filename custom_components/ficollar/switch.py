@@ -48,7 +48,7 @@ class FiLostDogModeSwitch(FiEntity, SwitchEntity):
     def is_on(self) -> bool:
         """Return true if lost dog mode is active."""
         if self.pet_data and self.pet_data.live_state:
-            return bool(self.pet_data.live_state.lost_mode)
+            return bool(self.pet_data.live_state.is_lost)
         return False
 
     @property
@@ -65,21 +65,27 @@ class FiLostDogModeSwitch(FiEntity, SwitchEntity):
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Enable lost dog mode."""
         try:
-            ttl = await self.hass.async_add_executor_job(
-                self.coordinator.client.enable_lost_dog_mode,
+            await self.hass.async_add_executor_job(
+                self.coordinator.client.set_lost_dog_mode,
                 self.pet_id,
+                True,
             )
-            LOGGER.info("Enabled lost dog mode for pet %s (TTL: %s seconds)", self.pet_id, ttl)
+            LOGGER.info("Enabled lost dog mode for pet %s", self.pet_id)
             await self.coordinator.async_request_refresh()
         except Exception as err:
             LOGGER.error("Failed to enable lost dog mode: %s", err)
             raise
 
     async def async_turn_off(self, **kwargs: Any) -> None:
-        """Turn off lost dog mode.
-
-        TryFi API automatically times out lost dog mode based on its TTL.
-        """
-        LOGGER.warning(
-            "TryFi does not provide an immediate disable API for lost mode; it expires automatically."
-        )
+        """Turn off lost dog mode."""
+        try:
+            await self.hass.async_add_executor_job(
+                self.coordinator.client.set_lost_dog_mode,
+                self.pet_id,
+                False,
+            )
+            LOGGER.info("Disabled lost dog mode for pet %s", self.pet_id)
+            await self.coordinator.async_request_refresh()
+        except Exception as err:
+            LOGGER.error("Failed to disable lost dog mode: %s", err)
+            raise

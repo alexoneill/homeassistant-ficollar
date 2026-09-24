@@ -80,7 +80,7 @@ def sample_live_state() -> PetLiveState:
         is_online=True,
         is_stale=False,
         out_of_battery=False,
-        lost_mode=None,
+        lost_mode="LDM_DISABLED",
         battery_percent=88,
         location_name="Home",
         location=Location(

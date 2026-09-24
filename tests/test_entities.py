@@ -78,6 +78,10 @@ async def test_binary_sensors_state(
     assert out_of_batt_state is not None
     assert out_of_batt_state.state == STATE_OFF
 
+    lost_mode_sensor = hass.states.get("binary_sensor.luna_lost_mode")
+    assert lost_mode_sensor is not None
+    assert lost_mode_sensor.state == STATE_OFF
+
 
 async def test_collar_light_services(
     hass: HomeAssistant,
@@ -116,13 +120,14 @@ async def test_lost_dog_mode_switch_service(
     mock_config_entry: MockConfigEntry,
     mock_fi_client: MagicMock,
 ) -> None:
-    """Verify turning on lost dog mode via Home Assistant switch service."""
+    """Verify turning on and off lost dog mode via Home Assistant switch service."""
     mock_config_entry.add_to_hass(hass)
     await hass.config_entries.async_setup(mock_config_entry.entry_id)
     await hass.async_block_till_done()
 
     switch_state = hass.states.get("switch.luna_lost_dog_mode")
     assert switch_state is not None
+    assert switch_state.state == STATE_OFF
 
     # Call switch.turn_on service
     await hass.services.async_call(
@@ -131,4 +136,13 @@ async def test_lost_dog_mode_switch_service(
         {ATTR_ENTITY_ID: "switch.luna_lost_dog_mode"},
         blocking=True,
     )
-    mock_fi_client.enable_lost_dog_mode.assert_called_with("pet_123")
+    mock_fi_client.set_lost_dog_mode.assert_called_with("pet_123", True)
+
+    # Call switch.turn_off service
+    await hass.services.async_call(
+        "switch",
+        "turn_off",
+        {ATTR_ENTITY_ID: "switch.luna_lost_dog_mode"},
+        blocking=True,
+    )
+    mock_fi_client.set_lost_dog_mode.assert_called_with("pet_123", False)

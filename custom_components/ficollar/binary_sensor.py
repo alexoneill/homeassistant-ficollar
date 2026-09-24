@@ -44,7 +44,7 @@ BINARY_SENSOR_DESCRIPTIONS: tuple[FiBinarySensorEntityDescription, ...] = (
         name="Lost Mode",
         device_class=BinarySensorDeviceClass.PROBLEM,
         icon="mdi:alert-decagram",
-        is_on_fn=lambda d: bool(d.live_state.lost_mode) if d.live_state else None,
+        is_on_fn=lambda d: bool(d.live_state.is_lost) if d.live_state else None,
     ),
     FiBinarySensorEntityDescription(
         key="is_walking",
