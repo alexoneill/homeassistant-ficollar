@@ -50,7 +50,7 @@ class TestManifests(unittest.TestCase):
         self.assertEqual(data["name"], "Fi Collar")
         self.assertTrue(data["config_flow"])
         self.assertEqual(data["integration_type"], "hub")
-        self.assertIn("pyficollar>=0.1.1", data["requirements"])
+        self.assertIn("pyficollar>=0.1.2", data["requirements"])
 
     def test_strings_and_translations_match(self) -> None:
         """Verify strings.json matches translations/en.json."""
