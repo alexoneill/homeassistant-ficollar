@@ -17,6 +17,7 @@ from custom_components.ficollar.const import (
 from pyficollar.models import (
     ActivitySummary,
     Device,
+    LedColor,
     Location,
     Pet,
     PetLiveState,
@@ -68,6 +69,12 @@ def sample_pet() -> Pet:
             module_id="FC12345678",
             battery_percent=88,
             led_enabled=False,
+            led_color=LedColor(led_color_code=5, hex_code="ff2fcc", name="Purple"),
+            available_led_colors=[
+                LedColor(led_color_code=2, hex_code="ff4242", name="Red"),
+                LedColor(led_color_code=5, hex_code="ff2fcc", name="Purple"),
+                LedColor(led_color_code=4, hex_code="0071ff", name="Blue"),
+            ],
         ),
     )
 
@@ -91,6 +98,12 @@ def sample_live_state() -> PetLiveState:
         is_walking=False,
         ongoing_steps=0,
         module_id="FC12345678",
+        led_color=LedColor(led_color_code=5, hex_code="ff2fcc", name="Purple"),
+        available_led_colors=[
+            LedColor(led_color_code=2, hex_code="ff4242", name="Red"),
+            LedColor(led_color_code=5, hex_code="ff2fcc", name="Purple"),
+            LedColor(led_color_code=4, hex_code="0071ff", name="Blue"),
+        ],
     )
 
 

@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
+from homeassistant.components.light import ATTR_RGB_COLOR
 from homeassistant.const import ATTR_ENTITY_ID, STATE_OFF, STATE_ON
 from homeassistant.core import HomeAssistant
 
@@ -96,13 +97,17 @@ async def test_collar_light_services(
     light_state = hass.states.get("light.luna_collar_led")
     assert light_state is not None
 
-    # Call light.turn_on service
+    # Call light.turn_on service with RGB color
     await hass.services.async_call(
         "light",
         "turn_on",
-        {ATTR_ENTITY_ID: "light.luna_collar_led"},
+        {
+            ATTR_ENTITY_ID: "light.luna_collar_led",
+            ATTR_RGB_COLOR: (255, 66, 66),  # Red
+        },
         blocking=True,
     )
+    mock_fi_client.set_led_color.assert_called_with("FC12345678", 2)
     mock_fi_client.set_led.assert_called_with("FC12345678", True)
 
     # Call light.turn_off service
@@ -113,6 +118,34 @@ async def test_collar_light_services(
         blocking=True,
     )
     mock_fi_client.set_led.assert_called_with("FC12345678", False)
+
+
+async def test_collar_light_color_select(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_fi_client: MagicMock,
+) -> None:
+    """Verify collar light color select entity and option change service."""
+    mock_config_entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    select_state = hass.states.get("select.luna_collar_light_color")
+    assert select_state is not None
+    assert select_state.state == "Purple"
+    assert "Red" in select_state.attributes["options"]
+
+    # Call select.select_option service
+    await hass.services.async_call(
+        "select",
+        "select_option",
+        {
+            ATTR_ENTITY_ID: "select.luna_collar_light_color",
+            "option": "Red",
+        },
+        blocking=True,
+    )
+    mock_fi_client.set_led_color.assert_called_with("FC12345678", 2)
 
 
 async def test_lost_dog_mode_switch_service(

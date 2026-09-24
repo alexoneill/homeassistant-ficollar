@@ -28,4 +28,5 @@ PLATFORMS: Final = [
     "binary_sensor",
     "light",
     "switch",
+    "select",
 ]
