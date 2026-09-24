@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from homeassistant.components.light import ATTR_RGB_COLOR
+from homeassistant.components.light import ATTR_EFFECT, ATTR_RGB_COLOR
 from homeassistant.const import ATTR_ENTITY_ID, STATE_OFF, STATE_ON
 from homeassistant.core import HomeAssistant
 
@@ -96,19 +96,25 @@ async def test_collar_light_services(
 
     light_state = hass.states.get("light.luna_collar_led")
     assert light_state is not None
+    assert light_state.state == STATE_OFF
+    assert "Red" in light_state.attributes.get("effect_list", [])
 
-    # Call light.turn_on service with RGB color
+    # Call light.turn_on service with effect
     await hass.services.async_call(
         "light",
         "turn_on",
         {
             ATTR_ENTITY_ID: "light.luna_collar_led",
-            ATTR_RGB_COLOR: (255, 66, 66),  # Red
+            ATTR_EFFECT: "Red",
         },
         blocking=True,
     )
     mock_fi_client.set_led_color.assert_called_with("FC12345678", 2)
     mock_fi_client.set_led.assert_called_with("FC12345678", True)
+
+    light_state = hass.states.get("light.luna_collar_led")
+    assert light_state.state == STATE_ON
+    assert light_state.attributes.get("effect") == "Purple"
 
     # Call light.turn_off service
     await hass.services.async_call(

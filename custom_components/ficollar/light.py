@@ -4,7 +4,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from homeassistant.components.light import ATTR_RGB_COLOR, ColorMode, LightEntity
+from homeassistant.components.light import (
+    ATTR_EFFECT,
+    ATTR_RGB_COLOR,
+    ColorMode,
+    LightEntity,
+    LightEntityFeature,
+)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -12,6 +18,16 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from .const import DOMAIN, LOGGER
 from .coordinator import FiDataUpdateCoordinator
 from .entity import FiEntity
+
+DEFAULT_COLORS: list[tuple[int, str, str]] = [
+    (2, "ff4242", "Red"),
+    (3, "3cba0f", "Green"),
+    (4, "0071ff", "Blue"),
+    (5, "ff2fcc", "Purple"),
+    (6, "ffff01", "Yellow"),
+    (7, "00ffff", "Cyan"),
+    (8, "ffffff", "White"),
+]
 
 
 def _hex_to_rgb(hex_str: str) -> tuple[int, int, int]:
@@ -72,8 +88,9 @@ class FiCollarLight(FiEntity, LightEntity):
     """Representing a Fi collar LED light."""
 
     _attr_icon = "mdi:led-on"
-    _attr_supported_color_modes = {ColorMode.RGB}
-    _attr_color_mode = ColorMode.RGB
+    _attr_supported_color_modes = {ColorMode.ONOFF}
+    _attr_color_mode = ColorMode.ONOFF
+    _attr_supported_features = LightEntityFeature.EFFECT
 
     def __init__(
         self,
@@ -102,17 +119,29 @@ class FiCollarLight(FiEntity, LightEntity):
         return False
 
     @property
-    def rgb_color(self) -> tuple[int, int, int] | None:
-        """Return the rgb color value."""
+    def effect_list(self) -> list[str]:
+        """Return the list of supported color effects."""
         if self.pet_data:
-            if self.pet_data.live_state and self.pet_data.live_state.led_color:
-                return _hex_to_rgb(self.pet_data.live_state.led_color.hex_code)
-            if (
-                self.pet_data.pet
-                and self.pet_data.pet.device
-                and self.pet_data.pet.device.led_color
-            ):
-                return _hex_to_rgb(self.pet_data.pet.device.led_color.hex_code)
+            live = self.pet_data.live_state
+            device = self.pet_data.pet.device if self.pet_data.pet else None
+            available = (live.available_led_colors if live else None) or (
+                device.available_led_colors if device else None
+            )
+            if available:
+                return [c.name for c in available]
+        return [c[2] for c in DEFAULT_COLORS]
+
+    @property
+    def effect(self) -> str | None:
+        """Return the current color effect."""
+        if self.pet_data:
+            live = self.pet_data.live_state
+            device = self.pet_data.pet.device if self.pet_data.pet else None
+            led_color = (live.led_color if live else None) or (
+                device.led_color if device else None
+            )
+            if led_color:
+                return led_color.name
         return None
 
     @property
@@ -134,9 +163,30 @@ class FiCollarLight(FiEntity, LightEntity):
         return attrs
 
     async def async_turn_on(self, **kwargs: Any) -> None:
-        """Turn the collar light on, optionally setting color."""
+        """Turn the collar light on, optionally setting color effect."""
         try:
-            if ATTR_RGB_COLOR in kwargs:
+            color_code: int | None = None
+            if ATTR_EFFECT in kwargs:
+                effect_name = kwargs[ATTR_EFFECT]
+                if self.pet_data:
+                    live = self.pet_data.live_state
+                    device = self.pet_data.pet.device if self.pet_data.pet else None
+                    available = (live.available_led_colors if live else None) or (
+                        device.available_led_colors if device else None
+                    )
+                    if available:
+                        for c in available:
+                            if c.name.lower() == effect_name.lower():
+                                color_code = c.led_color_code
+                                break
+
+                if color_code is None:
+                    for code, _, name in DEFAULT_COLORS:
+                        if name.lower() == effect_name.lower():
+                            color_code = code
+                            break
+
+            elif ATTR_RGB_COLOR in kwargs:
                 target_rgb = kwargs[ATTR_RGB_COLOR]
                 available = []
                 if self.pet_data and self.pet_data.live_state and self.pet_data.live_state.available_led_colors:
@@ -145,6 +195,8 @@ class FiCollarLight(FiEntity, LightEntity):
                     available = self.pet_data.pet.device.available_led_colors
 
                 color_code = _closest_color_code(target_rgb, available) if available else 5
+
+            if color_code is not None:
                 await self.hass.async_add_executor_job(
                     self.coordinator.client.set_led_color,
                     self.module_id,
