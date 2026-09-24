@@ -40,3 +40,20 @@ async def test_async_setup_and_unload_entry(
 
     assert mock_config_entry.state is ConfigEntryState.NOT_LOADED
     assert mock_config_entry.entry_id not in hass.data[DOMAIN]
+
+
+async def test_async_setup_entry_auth_failed(
+    hass: HomeAssistant,
+    mock_config_entry: MockConfigEntry,
+    mock_fi_client: MagicMock,
+) -> None:
+    """Test handling authentication failure during entry setup."""
+    from pyficollar.exceptions import FiAuthError
+
+    mock_fi_client.login.side_effect = FiAuthError("Unauthorized")
+    mock_config_entry.add_to_hass(hass)
+
+    await hass.config_entries.async_setup(mock_config_entry.entry_id)
+    await hass.async_block_till_done()
+
+    assert mock_config_entry.state is ConfigEntryState.SETUP_ERROR

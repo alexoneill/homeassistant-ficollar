@@ -29,6 +29,13 @@ PLATFORMS: list[Platform] = [
 ]
 
 
+def _authenticate_client(email: str, password: str) -> FiClient:
+    """Create and authenticate a FiClient inside an executor thread."""
+    client = FiClient()
+    client.login(email=email, password=password, save_session=False)
+    return client
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Fi Collar from a config entry."""
     email = entry.data[CONF_EMAIL]
@@ -38,10 +45,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         entry.data.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL),
     )
 
-    client = FiClient()
     try:
-        await hass.async_add_executor_job(
-            client.login, email, password, False
+        client = await hass.async_add_executor_job(
+            _authenticate_client, email, password
         )
     except FiAuthError as err:
         raise ConfigEntryAuthFailed(
